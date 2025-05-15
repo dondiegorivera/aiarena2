@@ -1,0 +1,17 @@
+# Ignore Python virtual environments
+venv/
+
+# Ignore Git metadata (usually not necessary unless nesting repos)
+.git/
+
+# Ignore Python bytecode
+**/__pycache__/
+
+# Ignore specific file
+dumper.py
+
+# Ignore backup folder
+bak/
+
+# Ignore generated genomes directory
+storage/genomes/
