@@ -23,7 +23,7 @@ COOLDOWN_JITTER_FACTOR = 0.1 # e.g., 0.1 for +/-10% weapon cooldown variation
 
 # --- Agent Perception & Control (EXPANDED_PLAN §3) ---
 LIDAR_NUM_RAYS = 12
-LIDAR_MAX_RANGE = 400.0 # Max distance for lidar rays
+LIDAR_MAX_RANGE = ARENA_WIDTH # Max distance for lidar rays
 # Input vector: [LIDAR_NUM_RAYS distances, own_health, weapon_ready, bias_input]
 SENSORY_INPUT_SIZE = LIDAR_NUM_RAYS + 3 # Health, Weapon Ready, Bias
 NUM_ACTIONS = 4 # Thrust, Strafe, Rotate, Fire
@@ -31,7 +31,7 @@ FIRE_THRESHOLD = 0.5 # For continuous output mapped to trigger probability
 STRAFE_SPEED_FACTOR = 0.75 # Agent strafes at this factor of base_speed
 
 # --- RNN Configuration (EXPANDED_PLAN §3) ---
-USE_RNN = True # Toggle for using RNN architecture
+USE_RNN = False # Toggle for using RNN architecture
 RNN_HIDDEN_SIZE = 16 # Size of the recurrent hidden state vector
 
 # --- Weapon Configuration ---

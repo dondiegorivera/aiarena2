@@ -5,13 +5,11 @@ import os
 import sys
 import glob
 import itertools
-# import shutil # shutil was in original main.py but not used in its current form after Evo Orchestrator handles dir.
 
-import numpy as np # For GD/RL. Keep for now.
+import numpy as np 
 
-# Custom modules
-import config # ✅ USE CONFIG
-import rand   # ✅ USE RAND FOR RNG
+import config 
+import rand   
 
 from arena.arena import Arena
 from agents.body import AgentBody
@@ -24,64 +22,47 @@ from storage import persist
 # --- Core Simulation Functions ---
 def run_manual_simulation(opponent_genome_path=None):
     """Runs a manual simulation with player control against an optional AI opponent."""
-    rng = rand.get_rng() # Get the global RNG
+    rng = rand.get_rng() 
     game_arena = Arena(config.ARENA_WIDTH, config.ARENA_HEIGHT, wall_bounce_loss_factor=config.WALL_BOUNCE_LOSS_FACTOR, rng=rng)
     manual_agent = AgentBody(
         x=config.ARENA_WIDTH / 2, y=config.ARENA_HEIGHT - 100, angle_deg=-90,
         base_speed=config.AGENT_BASE_SPEED, rotation_speed_dps=config.AGENT_ROTATION_SPEED_DPS, radius=config.AGENT_RADIUS,
         color=config.MANUAL_AGENT_COLOR, agent_id="player", team_id=config.PLAYER_TEAM_ID,
-        hp=config.DEFAULT_AGENT_HP + 50, brain=None, # Player gets more HP
+        hp=config.DEFAULT_AGENT_HP + 50, brain=None, 
         weapon_range=config.WEAPON_RANGE, weapon_arc_deg=config.WEAPON_ARC_DEG,
         weapon_cooldown_time=config.WEAPON_COOLDOWN_TIME, weapon_damage=config.WEAPON_DAMAGE,
         cooldown_jitter_factor=config.COOLDOWN_JITTER_FACTOR,
-        rng=rng, # Pass RNG
-        # RNN state not needed for manual/None brain
+        rng=rng
+        # No use_rnn or rnn_hidden_size here
     )
     game_arena.add_agent(manual_agent)
 
     ai_opponent_brain = None
     ai_opponent_id = "ai_opponent_random"
-    brain_input_size = config.BRAIN_SENSORY_INPUTS + (config.RNN_HIDDEN_SIZE if config.USE_RNN else 0)
-    brain_output_size = config.NUM_ACTIONS + (config.RNN_HIDDEN_SIZE if config.USE_RNN else 0)
+    # Brain sizes are now taken from config directly when creating a new TinyNet
+    # For loading, TinyNet infers its own sizes from the loaded weights.
 
     if opponent_genome_path:
         print(f"Attempting to load opponent genome from: {opponent_genome_path}")
         try:
-            # Pass RNG to load_genome if it needs to init sigma or other RNG-dependent params,
-            # though typically load_genome just loads weights.
             ai_opponent_brain = persist.load_genome(
                 opponent_genome_path,
-                input_size=brain_input_size,
-                hidden_size=config.BRAIN_HIDDEN_LAYER_SIZE,
-                output_size=brain_output_size,
-                rng=rng # For initializing sigma if not in file
+                # input_size, hidden_size, output_size are now inferred by TinyNet from weights
+                # or TinyNet uses its constructor defaults if creating new based on global config.
+                # No need to pass them here if TinyNet correctly infers from w_in/w_out.
+                rng=rng
             )
             ai_opponent_id = f"ai_trained_{os.path.basename(opponent_genome_path).split('.')[0]}"
             print(f"Successfully loaded trained opponent: {ai_opponent_id}")
         except FileNotFoundError:
             print(f"Warning: Opponent genome file not found at {opponent_genome_path}. Using random AI opponent.")
-            ai_opponent_brain = TinyNet(
-                input_size=brain_input_size,
-                hidden_size=config.BRAIN_HIDDEN_LAYER_SIZE,
-                output_size=brain_output_size,
-                rng=rng
-            )
+            ai_opponent_brain = TinyNet(rng=rng) # Uses defaults from config via TinyNet constructor
         except Exception as e:
             print(f"Warning: Error loading opponent genome ({e}). Using random AI opponent.")
-            ai_opponent_brain = TinyNet(
-                input_size=brain_input_size,
-                hidden_size=config.BRAIN_HIDDEN_LAYER_SIZE,
-                output_size=brain_output_size,
-                rng=rng
-            )
+            ai_opponent_brain = TinyNet(rng=rng)
     else:
         print("No opponent genome specified. Using random AI opponent.")
-        ai_opponent_brain = TinyNet(
-            input_size=brain_input_size,
-            hidden_size=config.BRAIN_HIDDEN_LAYER_SIZE,
-            output_size=brain_output_size,
-            rng=rng
-        )
+        ai_opponent_brain = TinyNet(rng=rng)
 
     ai_opponent = AgentBody(
         x=config.ARENA_WIDTH / 2, y=100, angle_deg=90,
@@ -91,18 +72,18 @@ def run_manual_simulation(opponent_genome_path=None):
         weapon_range=config.WEAPON_RANGE, weapon_arc_deg=config.WEAPON_ARC_DEG,
         weapon_cooldown_time=config.WEAPON_COOLDOWN_TIME, weapon_damage=config.WEAPON_DAMAGE,
         cooldown_jitter_factor=config.COOLDOWN_JITTER_FACTOR,
-        rng=rng, # Pass RNG
-        use_rnn=config.USE_RNN, rnn_hidden_size=config.RNN_HIDDEN_SIZE
+        rng=rng
+        # No use_rnn or rnn_hidden_size here
     )
     game_arena.add_agent(ai_opponent)
 
-    if not opponent_genome_path : # Add dummies if no specific opponent loaded
+    if not opponent_genome_path : 
         dummy_target_1 = AgentBody(
             x=100, y=config.ARENA_HEIGHT / 2, angle_deg=0, base_speed=0,
             rotation_speed_dps=0, radius=config.AGENT_RADIUS, color=config.DUMMY_AGENT_COLOR,
             agent_id="dummy_1", team_id=config.DUMMY_TEAM_ID, hp=100, is_dummy=True, brain=None,
             weapon_range=0, weapon_arc_deg=0, weapon_cooldown_time=999, weapon_damage=0,
-            rng=rng # Dummies also get RNG for consistency if they ever need it
+            rng=rng
         )
         game_arena.add_agent(dummy_target_1)
         dummy_target_2 = AgentBody(
@@ -115,22 +96,22 @@ def run_manual_simulation(opponent_genome_path=None):
         game_arena.add_agent(dummy_target_2)
 
     title = f"Manual Play vs {ai_opponent_id}"
-    # Pass RNG to Viewer if it needs it (e.g. for visual effects), currently not needed
     game_viewer = Viewer(config.ARENA_WIDTH, config.ARENA_HEIGHT, game_arena, title=title)
     game_viewer.run_simulation_loop(config.VISUAL_FPS, manual_agent_id="player")
 
 
 def run_training_session(generations, population_size, num_elites, mutation_sigma, eval_matches, match_steps, sim_dt, current_seed):
     """Runs an evolutionary training session."""
-    rng = rand.get_rng() # Get the global RNG
+    rng = rand.get_rng() 
     print("\n" + "="*30); print(" STARTING EVOLUTIONARY TRAINING "); print("="*30)
-    print(f"Seed for this run: {current_seed}") # ✅ Log reproducibility info
+    print(f"Seed for this run: {current_seed}") 
     print(f"Generations={generations}, Population={population_size}, Elites={num_elites}")
     print(f"Initial Mutation Sigma={mutation_sigma} (self-adaptive)")
     print(f"Eval Matches per Genome={eval_matches}, Tournament Size K={config.TOURNAMENT_SIZE_K}")
     print(f"Sim DT: {sim_dt:.4f} ({1.0/sim_dt:.1f} tps), Match Steps: {match_steps} (~{match_steps*sim_dt:.1f}s)")
     print(f"Agent HP for Eval: {config.DEFAULT_AGENT_HP}")
     print(f"Lidar Rays: {config.LIDAR_NUM_RAYS}, RNN: {config.USE_RNN} (Hidden: {config.RNN_HIDDEN_SIZE if config.USE_RNN else 'N/A'})")
+    print(f"Brain Input Size (config): {config.BRAIN_INPUT_SIZE}, Output Size (config): {config.BRAIN_OUTPUT_SIZE}")
     print(f"Fitness: Damage Coeff={config.C_DAMAGE}, Survival Coeff={config.C_SURVIVAL}")
     print(f"Best genomes saved to: {config.BEST_GENOMES_PER_GENERATION_DIR}")
     print("="*30 + "\n")
@@ -138,15 +119,15 @@ def run_training_session(generations, population_size, num_elites, mutation_sigm
     evo_orchestrator = EvolutionOrchestrator(
         population_size=population_size,
         num_elites=num_elites,
-        initial_mutation_sigma=mutation_sigma, # For initial sigma of genomes
+        initial_mutation_sigma=mutation_sigma, 
         arena_width=config.ARENA_WIDTH,
         arena_height=config.ARENA_HEIGHT,
         match_max_steps=match_steps,
         match_dt=sim_dt,
         num_eval_matches_per_genome=eval_matches,
         default_agent_hp=config.DEFAULT_AGENT_HP,
-        rng=rng, # Pass RNG
-        current_seed_for_saving=current_seed # Pass seed for metadata
+        rng=rng, 
+        current_seed_for_saving=current_seed 
     )
     final_population = evo_orchestrator.run_evolution(num_generations=generations)
 
@@ -156,7 +137,6 @@ def run_training_session(generations, population_size, num_elites, mutation_sigm
         print(f"\nTraining complete. Best overall fitness in final population: {best_overall.fitness:.4f}")
         final_best_dir = os.path.join(config.GENOME_STORAGE_DIR, "final_bests")
         if not os.path.exists(final_best_dir): os.makedirs(final_best_dir)
-        # Pass RNG for saving, though persist.save_genome itself doesn't use RNG, it logs the seed.
         saved_path = persist.save_genome(
             best_overall, "final_best_genome", final_best_dir,
             generations, best_overall.fitness, rng_seed_value=current_seed
@@ -177,12 +157,10 @@ def run_visual_match(genome_path1, genome_path2, num_games=1):
     print(f"  AI 1 (Red): {ai1_name}")
     print(f"  AI 2 (Green): {ai2_name}")
 
-    brain_input_size = config.BRAIN_SENSORY_INPUTS + (config.RNN_HIDDEN_SIZE if config.USE_RNN else 0)
-    brain_output_size = config.NUM_ACTIONS + (config.RNN_HIDDEN_SIZE if config.USE_RNN else 0)
-
     try:
-        brain1 = persist.load_genome(genome_path1, brain_input_size, config.BRAIN_HIDDEN_LAYER_SIZE, brain_output_size, rng=rng)
-        brain2 = persist.load_genome(genome_path2, brain_input_size, config.BRAIN_HIDDEN_LAYER_SIZE, brain_output_size, rng=rng)
+        # TinyNet will infer its structure from loaded weights.
+        brain1 = persist.load_genome(genome_path1, rng=rng)
+        brain2 = persist.load_genome(genome_path2, rng=rng)
     except Exception as e:
         print(f"Error loading genome(s): {e}"); return
 
@@ -197,8 +175,8 @@ def run_visual_match(genome_path1, genome_path2, num_games=1):
         color=config.AI_OPPONENT_COLOR, agent_id=ai1_name, team_id=1, hp=config.DEFAULT_AGENT_HP, brain=brain1,
         weapon_range=config.WEAPON_RANGE, weapon_arc_deg=config.WEAPON_ARC_DEG,
         weapon_cooldown_time=config.WEAPON_COOLDOWN_TIME, weapon_damage=config.WEAPON_DAMAGE,
-        cooldown_jitter_factor=config.COOLDOWN_JITTER_FACTOR, rng=rng,
-        use_rnn=config.USE_RNN, rnn_hidden_size=config.RNN_HIDDEN_SIZE
+        cooldown_jitter_factor=config.COOLDOWN_JITTER_FACTOR, rng=rng
+        # No use_rnn or rnn_hidden_size here
     )
     agent2_body = AgentBody(
         x=config.ARENA_WIDTH - 150, y=config.ARENA_HEIGHT / 2, angle_deg=180, base_speed=config.AGENT_BASE_SPEED,
@@ -206,8 +184,8 @@ def run_visual_match(genome_path1, genome_path2, num_games=1):
         color=config.AI_AGENT_COLOR_2, agent_id=ai2_name, team_id=2, hp=config.DEFAULT_AGENT_HP, brain=brain2,
         weapon_range=config.WEAPON_RANGE, weapon_arc_deg=config.WEAPON_ARC_DEG,
         weapon_cooldown_time=config.WEAPON_COOLDOWN_TIME, weapon_damage=config.WEAPON_DAMAGE,
-        cooldown_jitter_factor=config.COOLDOWN_JITTER_FACTOR, rng=rng,
-        use_rnn=config.USE_RNN, rnn_hidden_size=config.RNN_HIDDEN_SIZE
+        cooldown_jitter_factor=config.COOLDOWN_JITTER_FACTOR, rng=rng
+        # No use_rnn or rnn_hidden_size here
     )
     game_arena.add_agent(agent1_body)
     game_arena.add_agent(agent2_body)
@@ -218,14 +196,11 @@ def run_visual_match(genome_path1, genome_path2, num_games=1):
     for game_num in range(1, num_games + 1):
         print(f"\n--- Starting Game {game_num} of {num_games} ---")
 
-        game_arena.reset_arena_and_agents() # Resets agents to their initial_x, initial_y etc.
-        # For visual matches, we want fixed start positions, so re-apply them after reset.
+        game_arena.reset_arena_and_agents() 
         agent1_body.reset_state(x=150, y=config.ARENA_HEIGHT / 2, angle_deg=0, hp=config.DEFAULT_AGENT_HP)
         agent2_body.reset_state(x=config.ARENA_WIDTH - 150, y=config.ARENA_HEIGHT / 2, angle_deg=180, hp=config.DEFAULT_AGENT_HP)
-        # Ensure brains are still assigned (reset_state doesn't touch brain)
-        agent1_body.brain = brain1
+        agent1_body.brain = brain1 # Re-assign brain in case reset_state clears it (it doesn't currently)
         agent2_body.brain = brain2
-
 
         current_game_title = f"Game {game_num}/{num_games} | {ai1_name} (R): {score_ai1} - {ai2_name} (G): {score_ai2}"
         pygame.display.set_caption(current_game_title)
@@ -239,11 +214,13 @@ def run_visual_match(genome_path1, genome_path2, num_games=1):
         for step in range(game_max_steps):
             if not pygame.display.get_init():
                 print("Match series aborted (window closed).")
+                game_viewer.is_running_flag = False 
                 return
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running_this_game = False; winner_message_this_game = "Series Aborted (Quit)"
+                    game_viewer.is_running_flag = False
                     break
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
@@ -251,9 +228,12 @@ def run_visual_match(genome_path1, genome_path2, num_games=1):
                         break
             if not running_this_game:
                 break
+            if not game_viewer.is_running(): # Check if viewer was closed by QUIT event
+                return
+
 
             game_arena.update(match_visual_dt)
-            game_viewer.render_frame(show_game_over_message=False) # Let logic below handle game over text
+            game_viewer.render_frame(show_game_over_message=False) 
 
             is_over, winner_team_id, message = game_arena.check_match_end_conditions(max_duration_seconds=config.MATCH_DURATION_SECONDS)
             if is_over:
@@ -268,7 +248,6 @@ def run_visual_match(genome_path1, genome_path2, num_games=1):
                     winner_message_this_game += " (Draw)"
                 break
 
-            # Display current game time and HP on screen via Viewer
             hp_texts = [
                 (f"{ai1_name} (Red) HP: {agent1_body.hp:.0f}", config.AI_OPPONENT_COLOR),
                 (f"{ai2_name} (Green) HP: {agent2_body.hp:.0f}", config.AI_AGENT_COLOR_2)
@@ -281,13 +260,15 @@ def run_visual_match(genome_path1, genome_path2, num_games=1):
         print(f"Game {game_num} Result: {winner_message_this_game}")
         current_series_score_str = f"{ai1_name} (Red): {score_ai1}  -  {ai2_name} (Green): {score_ai2}"
         print(f"Current Series Score: {current_series_score_str}")
-        pygame.display.set_caption(f"Game {game_num} Over! {current_series_score_str} | SPACE for Next")
+        if pygame.display.get_init(): # Check if display still active
+            pygame.display.set_caption(f"Game {game_num} Over! {current_series_score_str} | SPACE for Next")
 
-        if not pygame.display.get_init() or "Series Aborted" in winner_message_this_game:
+        if not game_viewer.is_running() or "Series Aborted" in winner_message_this_game: 
             if pygame.display.get_init(): pygame.quit()
             return
 
         if game_num < num_games:
+            if not pygame.display.get_init(): return # Window might have been closed
             game_viewer.wait_for_keypress_to_continue(
                 main_message=winner_message_this_game,
                 sub_message=current_series_score_str,
@@ -295,7 +276,7 @@ def run_visual_match(genome_path1, genome_path2, num_games=1):
                 continue_key=pygame.K_SPACE,
                 abort_key=pygame.K_ESCAPE
             )
-            if not game_viewer.is_running(): # Check if aborted during wait
+            if not game_viewer.is_running(): 
                  if pygame.display.get_init(): pygame.quit()
                  return
 
@@ -316,11 +297,14 @@ def run_visual_match(genome_path1, genome_path2, num_games=1):
             main_message=final_score_str,
             sub_message=overall_winner_str,
             prompt_message="Press ESC to return to menu.",
-            continue_key=None, # No continue, only abort
+            continue_key=None, 
             abort_key=pygame.K_ESCAPE,
             is_final_screen=True
         )
-        if pygame.display.get_init(): pygame.quit()
+        if pygame.display.get_init() and not game_viewer.is_running(): 
+            pass 
+        elif pygame.display.get_init(): 
+            pygame.quit()
 
 
 def run_show_genome(genome_path, scenario='vs_dummies'):
@@ -328,11 +312,8 @@ def run_show_genome(genome_path, scenario='vs_dummies'):
     rng = rand.get_rng()
     print(f"\nShowing genome: {os.path.basename(genome_path)} in scenario: {scenario}")
 
-    brain_input_size = config.BRAIN_SENSORY_INPUTS + (config.RNN_HIDDEN_SIZE if config.USE_RNN else 0)
-    brain_output_size = config.NUM_ACTIONS + (config.RNN_HIDDEN_SIZE if config.USE_RNN else 0)
-
     try:
-        ai_brain = persist.load_genome(genome_path, brain_input_size, config.BRAIN_HIDDEN_LAYER_SIZE, brain_output_size, rng=rng)
+        ai_brain = persist.load_genome(genome_path, rng=rng) # Let TinyNet infer sizes
     except Exception as e:
         print(f"Error loading genome: {e}"); return
 
@@ -341,11 +322,11 @@ def run_show_genome(genome_path, scenario='vs_dummies'):
         x=config.ARENA_WIDTH / 2, y=config.ARENA_HEIGHT - 150, angle_deg=-90,
         base_speed=config.AGENT_BASE_SPEED, rotation_speed_dps=config.AGENT_ROTATION_SPEED_DPS,
         radius=config.AGENT_RADIUS, color=config.AI_OPPONENT_COLOR, agent_id=os.path.basename(genome_path).split('.')[0], team_id=1,
-        hp=config.DEFAULT_AGENT_HP, brain=ai_brain,
+        hp=config.DEFAULT_AGENT_HP, brain=ai_brain, # Pass the loaded brain
         weapon_range=config.WEAPON_RANGE, weapon_arc_deg=config.WEAPON_ARC_DEG,
         weapon_cooldown_time=config.WEAPON_COOLDOWN_TIME, weapon_damage=config.WEAPON_DAMAGE,
-        cooldown_jitter_factor=config.COOLDOWN_JITTER_FACTOR, rng=rng,
-        use_rnn=config.USE_RNN, rnn_hidden_size=config.RNN_HIDDEN_SIZE
+        cooldown_jitter_factor=config.COOLDOWN_JITTER_FACTOR, rng=rng
+        # No use_rnn or rnn_hidden_size here; AgentBody infers from ai_brain
     )
     game_arena.add_agent(ai_agent_show)
 
@@ -370,13 +351,10 @@ def run_post_training_tournament(tournament_genome_dir=None, visual=False):
     if len(genome_files) < 2: print(f"Need at least 2 genomes. Found {len(genome_files)}."); return
     print(f"Found {len(genome_files)} champion genomes.")
 
-    brain_input_size = config.BRAIN_SENSORY_INPUTS + (config.RNN_HIDDEN_SIZE if config.USE_RNN else 0)
-    brain_output_size = config.NUM_ACTIONS + (config.RNN_HIDDEN_SIZE if config.USE_RNN else 0)
-
     champions = []
     for gf_path in genome_files:
         try:
-            brain = persist.load_genome(gf_path, brain_input_size, config.BRAIN_HIDDEN_LAYER_SIZE, brain_output_size, rng=rng)
+            brain = persist.load_genome(gf_path, rng=rng) # Let TinyNet infer sizes
             base = os.path.basename(gf_path); gen_part = base.split('_g')[1].split('_')[0] if '_g' in base else "unk"
             champ_name = f"Gen{gen_part}_{base.split('_fit')[0]}" if '_fit' in base else base.split('.')[0]
             champions.append({'path': gf_path, 'name': champ_name, 'brain': brain, 'wins': 0, 'score': 0.0})
@@ -393,7 +371,7 @@ def run_post_training_tournament(tournament_genome_dir=None, visual=False):
         c1, c2 = champions[c1_idx], champions[c2_idx]
         print(f"\nMatch {count+1}: {c1['name']} vs {c2['name']}")
         if visual:
-            run_visual_match(c1['path'], c2['path'], num_games=1) # Tournament visual is 1 game
+            run_visual_match(c1['path'], c2['path'], num_games=1) 
             print(f"Visual match displayed. Score manually if needed for tournament context, or rely on console output.")
             while True:
                 score_input = input(f"Score: '1' if {c1['name']} won, '2' if {c2['name']} won, 'd' for draw, 's' to skip scoring: ").strip().lower()
@@ -404,7 +382,6 @@ def run_post_training_tournament(tournament_genome_dir=None, visual=False):
                 else: print("Invalid input.")
             continue
 
-        # Randomize start positions for tournament matches too
         start_pos_c1 = EvolutionOrchestrator.get_random_start_pose(config.ARENA_WIDTH, config.ARENA_HEIGHT, config.AGENT_RADIUS, rng)
         start_pos_c2 = EvolutionOrchestrator.get_random_start_pose(config.ARENA_WIDTH, config.ARENA_HEIGHT, config.AGENT_RADIUS, rng)
 
@@ -412,11 +389,12 @@ def run_post_training_tournament(tournament_genome_dir=None, visual=False):
             {'brain': c1['brain'], 'team_id': 1, 'agent_id': c1['name'], 'start_pos': start_pos_c1, 'hp': config.DEFAULT_AGENT_HP},
             {'brain': c2['brain'], 'team_id': 2, 'agent_id': c2['name'], 'start_pos': start_pos_c2, 'hp': config.DEFAULT_AGENT_HP}
         ]
+        # Arena.run_match will instantiate AgentBody without use_rnn/rnn_hidden_size args.
         results = arena_obj.run_match(agent_configs, max_steps_tourney, match_dt_tourney)
         winner = results['winner_team_id']
         if winner == 1: print(f"Winner: {c1['name']}"); c1['wins']+=1; c1['score']+=1.0; c2['score']-=1.0
         elif winner == 2: print(f"Winner: {c2['name']}"); c2['wins']+=1; c2['score']+=1.0; c1['score']-=1.0
-        else: print("Draw"); c1['score']+=0.1; c2['score']+=0.1 # Small score for draw
+        else: print("Draw"); c1['score']+=0.1; c2['score']+=0.1 
 
     champions.sort(key=lambda c: (c['score'], c['wins']), reverse=True)
     print("\n--- Tournament Results ---")
@@ -427,29 +405,23 @@ def run_post_training_tournament(tournament_genome_dir=None, visual=False):
     if champions: print(f"\nOverall Tournament Winner: {champions[0]['name']} (Score: {champions[0]['score']:.2f}, Wins: {champions[0]['wins']})")
 
 
-# --- RL Fine-Tuning Functions (largely unchanged from original, but uses config/rand) ---
+# --- RL Fine-Tuning Functions ---
 def run_self_play_episode(genome, arena_width, arena_height, match_max_steps, match_dt, default_hp, rng_ep):
     """Runs a self-play episode for RL fine-tuning."""
     episode_data_for_gradients = []
-    self_play_arena = Arena(arena_width, arena_height, rng=rng_ep) # Pass RNG
+    self_play_arena = Arena(arena_width, arena_height, rng=rng_ep) 
 
-    brain_input_size = config.BRAIN_SENSORY_INPUTS + (config.RNN_HIDDEN_SIZE if config.USE_RNN else 0)
-    brain_output_size = config.NUM_ACTIONS + (config.RNN_HIDDEN_SIZE if config.USE_RNN else 0)
-
-    # Opponent uses a copy of the genome's weights but its own RNG for decisions if needed by brain internals
-    # and its own recurrent state if RNN.
+    # Opponent brain structure will match the genome's structure.
+    # TinyNet constructor infers sizes from genome's w_in/w_out if they are passed.
     opponent_brain = TinyNet(
         w_in=genome.w_in.copy(), w_out=genome.w_out.copy(),
-        input_size=brain_input_size, hidden_size=config.BRAIN_HIDDEN_LAYER_SIZE,
-        output_size=brain_output_size,
-        rng=rng_ep, # Opponent brain gets same master RNG for its construction
-        initial_sigma=genome.mutation_sigma # Copy sigma too
+        # input_size, hidden_size, output_size will be inferred by TinyNet from these weights
+        rng=rng_ep, 
+        initial_sigma=genome.mutation_sigma 
     )
 
-    # Randomize start positions for self-play episodes
     start_pos_p1 = EvolutionOrchestrator.get_random_start_pose(arena_width, arena_height, config.AGENT_RADIUS, rng_ep)
     start_pos_p2 = EvolutionOrchestrator.get_random_start_pose(arena_width, arena_height, config.AGENT_RADIUS, rng_ep)
-
 
     agent_configs = [
         {'brain': genome, 'team_id': 1, 'agent_id': 'player1_train',
@@ -457,20 +429,29 @@ def run_self_play_episode(genome, arena_width, arena_height, match_max_steps, ma
         {'brain': opponent_brain, 'team_id': 2, 'agent_id': 'player2_opponent',
          'start_pos': start_pos_p2, 'hp': default_hp}
     ]
-    self_play_arena.agents = [] # Clear agents before adding new ones
+    self_play_arena.agents = [] 
     player1_agent_body = None
+
+    common_body_params_rl = {
+        'base_speed': config.AGENT_BASE_SPEED,
+        'rotation_speed_dps': config.AGENT_ROTATION_SPEED_DPS, 
+        'radius': config.AGENT_RADIUS,
+        'weapon_range': config.WEAPON_RANGE, 
+        'weapon_arc_deg': config.WEAPON_ARC_DEG,
+        'weapon_cooldown_time': config.WEAPON_COOLDOWN_TIME, 
+        'weapon_damage': config.WEAPON_DAMAGE,
+        'cooldown_jitter_factor': config.COOLDOWN_JITTER_FACTOR,
+        'rng': rng_ep,
+    }
 
     for i, agent_conf in enumerate(agent_configs):
         start_x, start_y, start_angle = agent_conf.get('start_pos')
         agent = AgentBody(
-            x=start_x, y=start_y, angle_deg=start_angle, base_speed=config.AGENT_BASE_SPEED,
-            rotation_speed_dps=config.AGENT_ROTATION_SPEED_DPS, radius=config.AGENT_RADIUS,
-            agent_id=agent_conf['agent_id'], team_id=agent_conf['team_id'], hp=agent_conf['hp'], brain=agent_conf['brain'],
-            weapon_range=config.WEAPON_RANGE, weapon_arc_deg=config.WEAPON_ARC_DEG,
-            weapon_cooldown_time=config.WEAPON_COOLDOWN_TIME, weapon_damage=config.WEAPON_DAMAGE,
-            cooldown_jitter_factor=config.COOLDOWN_JITTER_FACTOR,
-            rng=rng_ep, # Agents get same master RNG
-            use_rnn=config.USE_RNN, rnn_hidden_size=config.RNN_HIDDEN_SIZE
+            x=start_x, y=start_y, angle_deg=start_angle,
+            agent_id=agent_conf['agent_id'], team_id=agent_conf['team_id'], 
+            hp=agent_conf['hp'], brain=agent_conf['brain'],
+            **common_body_params_rl
+            # No use_rnn or rnn_hidden_size here
         )
         self_play_arena.add_agent(agent)
         if agent_conf['agent_id'] == 'player1_train':
@@ -479,22 +460,20 @@ def run_self_play_episode(genome, arena_width, arena_height, match_max_steps, ma
     for step in range(match_max_steps):
         if not player1_agent_body or not player1_agent_body.is_alive(): break
 
-        # For RL, agent needs its own inputs, not from a stale list
         current_inputs_p1 = player1_agent_body.get_inputs_for_nn(self_play_arena.width, self_play_arena.height, self_play_arena.agents)
 
         x_p1, _h_pre_p1, h_p1_activated, _y_pre_p1, y_p1_actions_plus_recurrent = genome.forward_pass_for_gd(current_inputs_p1)
         episode_data_for_gradients.append({'x_input': x_p1, 'h_activated': h_p1_activated, 'y_activated_actions_plus_recurrent': y_p1_actions_plus_recurrent})
 
-        self_play_arena.update(match_dt) # This calls agent.update which internally calls brain
+        self_play_arena.update(match_dt) 
         match_over, _, _ = self_play_arena.check_match_end_conditions(max_duration_seconds=(match_max_steps * match_dt))
         if match_over: break
 
     final_results = self_play_arena.check_match_end_conditions(max_duration_seconds=(match_max_steps * match_dt))
     winner_team_id = final_results[1]
     match_reward = 0.0
-    if winner_team_id == 1: match_reward = 1.0  # Win
-    elif winner_team_id == 2: match_reward = -1.0 # Loss
-    # Draw is 0.0
+    if winner_team_id == 1: match_reward = 1.0  
+    elif winner_team_id == 2: match_reward = -1.0 
 
     return episode_data_for_gradients, match_reward
 
@@ -510,7 +489,6 @@ def fine_tune_genome_with_rl(genome_to_tune, num_episodes, learning_rate,
     avg_rewards_history = []
     for episode_num in range(num_episodes):
         try:
-            # Pass the fine-tuning RNG to the episode
             trajectory_data, final_match_reward = run_self_play_episode(
                 genome_to_tune, arena_width, arena_height, match_max_steps, match_dt, default_hp, rng_ft
             )
@@ -523,18 +501,10 @@ def fine_tune_genome_with_rl(genome_to_tune, num_episodes, learning_rate,
             total_steps_in_episode = len(trajectory_data)
 
             for step_data in trajectory_data:
-                # Policy gradient for actual actions (first NUM_ACTIONS part of output)
-                # y_activated_actions = step_data['y_activated_actions_plus_recurrent'][:config.NUM_ACTIONS]
-                # The gradient should be w.r.t. all outputs if they all influence reward through policy.
-                # However, REINFORCE applies to actions. If recurrent state is just state, not action,
-                # then policy gradient should only consider action outputs.
-                # For Elman, the recurrent part IS part of the output that becomes input.
-                # TinyNet.get_policy_gradient_for_action expects the full y_activated.
-
                 dW_in, dW_out = genome_to_tune.get_policy_gradient(
                     step_data['x_input'],
                     step_data['h_activated'],
-                    step_data['y_activated_actions_plus_recurrent'], # Pass the full output vector
+                    step_data['y_activated_actions_plus_recurrent'], 
                     final_match_reward
                 )
                 effective_lr = learning_rate / total_steps_in_episode if total_steps_in_episode > 1 else learning_rate
@@ -568,7 +538,6 @@ def select_genome_file(prompt_message, allow_none=False, none_option_text="None"
     print(f"\n{prompt_message}")
     search_dirs = [config.GENOME_STORAGE_DIR, config.BEST_GENOMES_PER_GENERATION_DIR,
                    os.path.join(config.GENOME_STORAGE_DIR, "final_bests"), config.FINETUNED_GENOME_DIR]
-    # ... (rest of select_genome_file is largely unchanged, uses config for dirs)
     collected_paths = set()
     for s_dir in search_dirs:
         if os.path.exists(s_dir):
@@ -648,20 +617,15 @@ def menu_run_post_tournament():
     print("\n--- Post-Training Tournament Setup ---")
     visual = input("Run tournament visually? (y/n, headless is faster for scoring): ").strip().lower() == 'y'
     if visual: print("Visual tournament. You will score each match manually.")
-    run_post_training_tournament(visual=visual) # Uses config.BEST_GENOMES_PER_GENERATION_DIR by default
+    run_post_training_tournament(visual=visual) 
 
-def menu_run_finetune_rl(rng_for_finetune): # Pass RNG specifically for fine-tuning session
+def menu_run_finetune_rl(rng_for_finetune): 
     print("\n--- RL Fine-Tuning Setup (Self-Play) ---")
     genome_path = select_genome_file("Select genome to fine-tune:", allow_none=False)
     if not genome_path: return
 
-    brain_input_size = config.BRAIN_SENSORY_INPUTS + (config.RNN_HIDDEN_SIZE if config.USE_RNN else 0)
-    brain_output_size = config.NUM_ACTIONS + (config.RNN_HIDDEN_SIZE if config.USE_RNN else 0)
-
     try:
-        genome_to_fine_tune = persist.load_genome(
-            genome_path, brain_input_size, config.BRAIN_HIDDEN_LAYER_SIZE, brain_output_size, rng=rng_for_finetune
-        )
+        genome_to_fine_tune = persist.load_genome(genome_path, rng=rng_for_finetune)
         if not isinstance(genome_to_fine_tune, TinyNet):
             print("Error: Loaded object is not a TinyNet instance.")
             return
@@ -681,26 +645,24 @@ def menu_run_finetune_rl(rng_for_finetune): # Pass RNG specifically for fine-tun
 
     print(f"Starting RL fine-tuning for: {genome_path}")
     fine_tuned_genome = fine_tune_genome_with_rl(
-        genome_to_tune,
+        genome_to_fine_tune, 
         num_episodes=num_episodes_input,
         learning_rate=learning_rate_input,
         arena_width=config.ARENA_WIDTH, arena_height=config.ARENA_HEIGHT,
         match_max_steps=config.MATCH_MAX_STEPS_TRAINING, match_dt=config.SIMULATION_DT,
         default_hp=config.DEFAULT_AGENT_HP,
-        rng_ft=rng_for_finetune # Pass RNG
+        rng_ft=rng_for_finetune 
     )
 
     save_dir_menu = os.path.dirname(save_path_input)
     save_filename_prefix_menu = os.path.basename(save_path_input).replace(".npz","").split("_fit")[0]
     if not os.path.exists(save_dir_menu): os.makedirs(save_dir_menu)
-
-    # Save with the fine-tuning RNG seed if relevant, or the original training seed.
-    # Let's assume we want to log the seed active when this save happens (the main program seed).
-    active_seed_for_saving = rand.get_rng()._bit_generator._seed_seq.entropy % (2**32-1) # A bit hacky to get current seed value
+    
+    active_seed_for_saving = rand.get_current_seed()
 
     saved_ft_path_menu = persist.save_genome(
         fine_tuned_genome, save_filename_prefix_menu, save_dir_menu,
-        fitness=fine_tuned_genome.fitness, # Use updated fitness if RL changed it
+        fitness=fine_tuned_genome.fitness, 
         rng_seed_value=active_seed_for_saving
     )
     print(f"RL fine-tuned genome saved to: {saved_ft_path_menu}")
@@ -721,37 +683,32 @@ def display_main_menu():
     print("==============================")
 
 def main_menu_loop(current_seed_for_run):
-    rng_menu = rand.get_rng() # Get global rng for menu operations if needed
+    rng_menu = rand.get_rng() 
     while True:
         display_main_menu()
         choice = input("Enter your choice: ").strip()
         if choice == '1': menu_run_manual()
-        elif choice == '2': menu_run_training(current_seed_for_run) # Pass seed
+        elif choice == '2': menu_run_training(current_seed_for_run) 
         elif choice == '3': menu_run_match()
         elif choice == '4': menu_run_show()
         elif choice == '5': menu_run_post_tournament()
-        elif choice == '6': menu_run_finetune_rl(rng_menu) # Pass RNG for fine-tuning
+        elif choice == '6': menu_run_finetune_rl(rng_menu) 
         elif choice == '0': print("Exiting Evo Arena. Goodbye!"); break
         else: print("Invalid choice, please try again.")
 
 # --- Main Execution ---
 def main():
-    if not os.path.exists(config.FINETUNED_GENOME_DIR):
-        os.makedirs(config.FINETUNED_GENOME_DIR)
-    if not os.path.exists(config.BEST_GENOMES_PER_GENERATION_DIR):
-        os.makedirs(config.BEST_GENOMES_PER_GENERATION_DIR)
-    if not os.path.exists(config.GENOME_STORAGE_DIR):
-        os.makedirs(config.GENOME_STORAGE_DIR)
-
+    # Ensure necessary directories exist
+    for dir_path in [config.GENOME_STORAGE_DIR, config.BEST_GENOMES_PER_GENERATION_DIR, config.FINETUNED_GENOME_DIR]:
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
 
     parser = argparse.ArgumentParser(description="Evo Arena: A simple agent evolution project.")
     parser.add_argument('mode', nargs='?', default=None,
                         choices=['manual', 'train', 'show', 'match', 'tournament', 'finetune_rl'],
                         help="Mode to run. If no mode, menu is shown.")
-    # RNG Seed Argument
     parser.add_argument('--seed', type=int, default=None, help="Seed for random number generation.")
 
-    # Evolution args
     parser.add_argument('--generations', type=int, default=config.DEFAULT_GENERATIONS)
     parser.add_argument('--pop_size', type=int, default=config.DEFAULT_POPULATION_SIZE)
     parser.add_argument('--elites', type=int, default=config.DEFAULT_NUM_ELITES)
@@ -759,17 +716,14 @@ def main():
     parser.add_argument('--eval_matches', type=int, default=config.DEFAULT_EVAL_MATCHES_PER_GENOME)
     parser.add_argument('--sim_dt', type=float, default=config.SIMULATION_DT)
     parser.add_argument('--match_steps', type=int, default=config.MATCH_MAX_STEPS_TRAINING)
-    # Manual/Match/Show args
     parser.add_argument('--opponent_genome', type=str, dest='manual_opponent_genome_path')
     parser.add_argument('--g1', type=str, dest='genome1_path', help="Path to genome for AI 1 (Red)")
     parser.add_argument('--g2', type=str, dest='genome2_path', help="Path to genome for AI 2 (Green)")
     parser.add_argument('--num_games', type=int, default=1, help="Number of games for 'match' mode series.")
     parser.add_argument('--genome', type=str, dest='show_genome_path')
     parser.add_argument('--scenario', type=str, default='vs_dummies', choices=['vs_dummies'])
-    # Tournament args
     parser.add_argument('--tournament_dir', type=str, default=config.BEST_GENOMES_PER_GENERATION_DIR)
     parser.add_argument('--visual_tournament', action='store_true')
-    # Fine-tuning args (RL)
     parser.add_argument('--genome_path_for_finetune', type=str, help="Path to .npz genome for fine-tuning.")
     parser.add_argument('--finetune_episodes', type=int, default=config.DEFAULT_FINETUNE_EPISODES)
     parser.add_argument('--finetune_lr', type=float, default=config.DEFAULT_FINETUNE_LR)
@@ -777,20 +731,16 @@ def main():
 
     args = parser.parse_args()
 
-    # Initialize RNG once, early using rand.py
-    # This will print the seed if it's newly generated.
     current_seed = rand.set_seed(args.seed)
-    main_rng = rand.get_rng() # Get the initialized global RNG
+    main_rng = rand.get_rng() 
 
     if args.mode is None:
-        main_menu_loop(current_seed) # Pass the seed for logging in training if started from menu
+        main_menu_loop(current_seed) 
         return
 
-    # Adjust match_steps for training if sim_dt is custom
     current_match_steps_for_training = args.match_steps
     if args.mode == 'train':
         sim_dt_is_custom = (args.sim_dt != config.SIMULATION_DT)
-        # Check if match_steps was the default calculated one based on the *original* config.SIMULATION_DT
         match_steps_is_default_calc_for_training = (args.match_steps == int(config.MATCH_DURATION_SECONDS / config.SIMULATION_DT))
 
         if sim_dt_is_custom and match_steps_is_default_calc_for_training:
@@ -820,24 +770,20 @@ def main():
         if not args.genome_path_for_finetune: parser.error("'finetune_rl' mode requires --genome_path_for_finetune.")
         if not os.path.exists(args.genome_path_for_finetune): parser.error(f"Genome file not found for fine-tuning: {args.genome_path_for_finetune}")
 
-        brain_input_size = config.BRAIN_SENSORY_INPUTS + (config.RNN_HIDDEN_SIZE if config.USE_RNN else 0)
-        brain_output_size = config.NUM_ACTIONS + (config.RNN_HIDDEN_SIZE if config.USE_RNN else 0)
         try:
-            genome_to_ft = persist.load_genome(
-                args.genome_path_for_finetune, brain_input_size, config.BRAIN_HIDDEN_LAYER_SIZE, brain_output_size, rng=main_rng
-            )
+            genome_to_ft = persist.load_genome(args.genome_path_for_finetune, rng=main_rng)
             if not isinstance(genome_to_ft, TinyNet): parser.error("Loaded object is not a TinyNet instance.")
         except Exception as e: parser.error(f"Error loading genome: {e}")
 
         print(f"[DEBUG CLI] Calling fine_tune_genome_with_rl with episodes: {args.finetune_episodes}, lr: {args.finetune_lr}")
         fine_tuned_g = fine_tune_genome_with_rl(
-            genome_to_ft,
+            genome_to_ft, 
             num_episodes=args.finetune_episodes,
             learning_rate=args.finetune_lr,
             arena_width=config.ARENA_WIDTH, arena_height=config.ARENA_HEIGHT,
             match_max_steps=config.MATCH_MAX_STEPS_TRAINING, match_dt=config.SIMULATION_DT,
             default_hp=config.DEFAULT_AGENT_HP,
-            rng_ft=main_rng # Pass the main RNG
+            rng_ft=main_rng 
         )
 
         save_path_ft = args.save_finetuned_path
@@ -855,7 +801,7 @@ def main():
         )
         print(f"RL fine-tuned genome saved to: {saved_ft_final_path}")
         print("Re-evaluate performance in the arena.")
-    else: # If sys.argv > 1 but mode is not recognized (should be caught by parser choices)
+    else: 
         main_menu_loop(current_seed)
 
 
